@@ -1,29 +1,35 @@
 import Foundation
 
+#if os(Linux)
+import Glibc
+#else
+import Darwin.C
+#endif
+
 public final class Lock {
-    private var backing: UnsafeMutablePointer<os_unfair_lock>
-
+    private var backing: UnsafeMutablePointer<pthread_mutex_t>
+    
     public init() {
-        backing = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
-        backing.initialize(to: os_unfair_lock())
+        backing = UnsafeMutablePointer<pthread_mutex_t>.allocate(capacity: 1)
+        backing.initialize(to: pthread_mutex_t())
+        pthread_mutex_init(backing, nil)
     }
-
+    
     deinit {
+        pthread_mutex_destroy(backing)
         backing.deinitialize(count: 1)
         backing.deallocate()
     }
-
+    
     public func locked<T>(_ block: () throws -> T) rethrows -> T {
-        // https://developer.apple.com/documentation/os/1646466-os_unfair_lock_lock
-        os_unfair_lock_lock(backing)
-        defer { os_unfair_lock_unlock(backing) }
+        pthread_mutex_lock(backing)
+        defer { pthread_mutex_unlock(backing) }
         return try block()
     }
-
+    
     public func tryLocked(_ block: () throws -> Void) rethrows -> Bool {
-        // https://developer.apple.com/documentation/os/1646469-os_unfair_lock_trylock
-        if os_unfair_lock_trylock(backing) {
-            defer { os_unfair_lock_unlock(backing) }
+        if pthread_mutex_trylock(backing) == 0 {
+            defer { pthread_mutex_unlock(backing) }
             try block()
             return true
         } else {
